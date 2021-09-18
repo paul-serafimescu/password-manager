@@ -2,13 +2,13 @@ mod cli;
 mod crypto;
 
 extern crate clap;
-extern crate fernet;
 extern crate dirs;
+extern crate fernet;
 extern crate serde_json;
 
-use crate::cli::{Command, parse_args};
-use crate::crypto::{Cipher, File, Path, PathBuf, Read, Write, home_dir};
-use crate::serde_json::{Value, Map};
+use crate::cli::{parse_args, Command};
+use crate::crypto::{home_dir, Cipher, File, Path, PathBuf, Read, Write};
+use crate::serde_json::{Map, Value};
 
 const DEFAULT_FILE_STORAGE: &str = ".psswrdmngr.json";
 
@@ -16,7 +16,9 @@ fn get_dump_file(file: Option<&String>) -> PathBuf {
   if let Some(_file) = file {
     Path::new(_file).join("")
   } else {
-    home_dir().expect("your OS does not seem to have a $HOME").join(DEFAULT_FILE_STORAGE)
+    home_dir()
+      .expect("your OS does not seem to have a $HOME")
+      .join(DEFAULT_FILE_STORAGE)
   }
 }
 
@@ -29,7 +31,8 @@ fn load_json_content(file_path: &PathBuf) -> Result<String, Box<dyn std::error::
     created = true;
     File::create(file_path)?;
     File::open(file_path)?
-  }.read_to_string(&mut contents)?;
+  }
+  .read_to_string(&mut contents)?;
   if created {
     contents.push_str("{}")
   }
@@ -49,22 +52,43 @@ fn load_json_map(contents: String) -> Result<Map<String, Value>, Box<dyn std::er
   Ok(main_map)
 }
 
-fn fetch_credentials(cipher: &Cipher, name: &String, file: Option<&String>) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn fetch_credentials(
+  cipher: &Cipher,
+  name: &String,
+  file: Option<&String>,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
   let _file = get_dump_file(file);
   let mut contents = String::new();
   File::open(_file)?.read_to_string(&mut contents)?;
   let parsed = json_parse(&contents)?;
   Ok(vec![
-    std::str::from_utf8(cipher.decrypt::<&String>(&parsed[name]["username"].as_str().unwrap().to_owned())?.as_slice())?.to_owned(),
-    std::str::from_utf8(cipher.decrypt::<&String>(&parsed[name]["password"].as_str().unwrap().to_owned())?.as_slice())?.to_owned(),
+    std::str::from_utf8(
+      cipher
+        .decrypt::<&String>(&parsed[name]["username"].as_str().unwrap().to_owned())?
+        .as_slice(),
+    )?
+    .to_owned(),
+    std::str::from_utf8(
+      cipher
+        .decrypt::<&String>(&parsed[name]["password"].as_str().unwrap().to_owned())?
+        .as_slice(),
+    )?
+    .to_owned(),
   ])
 }
 
-fn add_credentials(cipher: &Cipher, name: &String, file: Option<&String>, username: &String, password: &String) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn add_credentials(
+  cipher: &Cipher,
+  name: &String,
+  file: Option<&String>,
+  username: &String,
+  password: &String,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
   let encrypted = (
     name.to_owned(),
     cipher.encrypt(username),
-    cipher.encrypt(password));
+    cipher.encrypt(password),
+  );
   let _file = get_dump_file(file);
   let contents = load_json_content(&_file)?;
   let mut writable = File::create(_file)?;
@@ -77,7 +101,10 @@ fn add_credentials(cipher: &Cipher, name: &String, file: Option<&String>, userna
   Ok(Vec::new())
 }
 
-fn remove_credentials(name: &String, file: Option<&String>) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn remove_credentials(
+  name: &String,
+  file: Option<&String>,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
   let _file = get_dump_file(file);
   let contents = load_json_content(&_file)?;
   let mut writable = File::create(_file)?;
@@ -97,7 +124,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       &arguments.name.unwrap(),
       arguments.file.as_ref(),
       &arguments.username.unwrap(),
-      &arguments.password.unwrap())?,
+      &arguments.password.unwrap(),
+    )?,
     Command::Remove => remove_credentials(&arguments.name.unwrap(), arguments.file.as_ref())?,
   };
   for _r in result {

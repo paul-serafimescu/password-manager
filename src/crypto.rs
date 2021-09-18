@@ -1,8 +1,8 @@
+pub use dirs::home_dir;
+use fernet::{DecryptionError, Fernet};
 pub use std::fs::File;
 pub use std::io::prelude::*;
 pub use std::path::{Path, PathBuf};
-use fernet::{Fernet, DecryptionError};
-pub use dirs::home_dir;
 
 const KEY_FILE: &str = ".psswrdmngr_key";
 
@@ -24,7 +24,7 @@ impl AsBytes for &String {
 
 pub struct Cipher {
   key: String,
-  _cipher: Fernet
+  _cipher: Fernet,
 }
 
 impl Cipher {
@@ -34,18 +34,24 @@ impl Cipher {
       .expect("your OS does not seem to have a $HOME")
       .join(KEY_FILE);
     let key = if let Ok(mut key_file) = File::open(&key_path) {
-        let mut contents = String::new();
-        key_file.read_to_string(&mut contents).expect("buffer is not valid utf-8");
-        contents.trim().to_owned()
-      } else {
-        exists = false;
-        Fernet::generate_key()
-      };
+      let mut contents = String::new();
+      key_file
+        .read_to_string(&mut contents)
+        .expect("buffer is not valid utf-8");
+      contents.trim().to_owned()
+    } else {
+      exists = false;
+      Fernet::generate_key()
+    };
     let instance = Self {
       _cipher: Fernet::new(&key).expect("key is not 32 bit base64 encoded"),
-      key
+      key,
     };
-    if !exists { instance.dump_key(key_path).expect("lacking write permissions"); }
+    if !exists {
+      instance
+        .dump_key(key_path)
+        .expect("lacking write permissions");
+    }
     instance
   }
 
@@ -53,7 +59,10 @@ impl Cipher {
     self._cipher.encrypt(data._as_bytes())
   }
 
-  pub(super) fn decrypt<B: AsBytes>(&self, encrypted_data: &String) -> Result<Vec<u8>, DecryptionError> {
+  pub(super) fn decrypt<B: AsBytes>(
+    &self,
+    encrypted_data: &String,
+  ) -> Result<Vec<u8>, DecryptionError> {
     self._cipher.decrypt(encrypted_data.as_str())
   }
 
