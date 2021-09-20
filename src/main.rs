@@ -1,5 +1,6 @@
 mod cli;
 mod crypto;
+mod exceptions;
 
 extern crate clap;
 extern crate dirs;
@@ -8,9 +9,19 @@ extern crate serde_json;
 
 use crate::cli::{parse_args, Command};
 use crate::crypto::{home_dir, Cipher, File, Path, PathBuf, Read, Write};
+use crate::exceptions::*;
 use crate::serde_json::{Map, Value};
 
 const DEFAULT_FILE_STORAGE: &str = ".psswrdmngr.json";
+
+fn all_some<T>(vector: &Vec<Option<T>>) -> bool {
+  for val in vector {
+    if val.is_none() {
+      return false;
+    }
+  }
+  true
+}
 
 fn get_dump_file(file: Option<&String>) -> PathBuf {
   if let Some(_file) = file {
@@ -52,6 +63,31 @@ fn load_json_map(contents: String) -> Result<Map<String, Value>, Box<dyn std::er
   Ok(main_map)
 }
 
+fn index_credentials<'a, 'b>(
+  json_structure: &Value,
+  name: &String,
+  keys: &'a [&'a str; 2],
+) -> Option<Vec<String>> {
+  let indexed: Vec<Option<String>> = keys
+    .into_iter()
+    .map(|key| {
+      json_structure[name][key]
+        .as_str()
+        .map(|some| some.to_owned())
+    })
+    .collect();
+  if all_some(&indexed) {
+    Some(
+      indexed
+        .into_iter()
+        .map(|element| element.unwrap())
+        .collect(),
+    )
+  } else {
+    None
+  }
+}
+
 fn fetch_credentials(
   cipher: &Cipher,
   name: &String,
@@ -61,20 +97,20 @@ fn fetch_credentials(
   let mut contents = String::new();
   File::open(_file)?.read_to_string(&mut contents)?;
   let parsed = json_parse(&contents)?;
-  Ok(vec![
-    std::str::from_utf8(
-      cipher
-        .decrypt::<&String>(&parsed[name]["username"].as_str().unwrap().to_owned())?
-        .as_slice(),
-    )?
-    .to_owned(),
-    std::str::from_utf8(
-      cipher
-        .decrypt::<&String>(&parsed[name]["password"].as_str().unwrap().to_owned())?
-        .as_slice(),
-    )?
-    .to_owned(),
-  ])
+  if let Some(creds) = index_credentials(&parsed, name, &["username", "password"]) {
+    Ok(
+      creds
+        .into_iter()
+        .map(|element| {
+          std::str::from_utf8(cipher.decrypt::<String>(&element).unwrap().as_slice())
+            .unwrap()
+            .to_owned()
+        })
+        .collect(),
+    )
+  } else {
+    Err(Box::new(InvalidJSONError()))
+  }
 }
 
 fn add_credentials(
@@ -109,7 +145,9 @@ fn remove_credentials(
   let contents = load_json_content(&_file)?;
   let mut writable = File::create(_file)?;
   let mut main_map = load_json_map(contents)?;
-  main_map.remove(name);
+  if main_map.remove(name) == None {
+    println!("Entry not found, no action required.")
+  }
   writable.write(serde_json::to_string_pretty(&main_map)?.as_bytes())?;
   Ok(Vec::new())
 }
@@ -127,6 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       &arguments.password.unwrap(),
     )?,
     Command::Remove => remove_credentials(&arguments.name.unwrap(), arguments.file.as_ref())?,
+    Command::Unknown => vec!["invalid option. quitting...".to_owned()],
   };
   for _r in result {
     println!("{}", _r)

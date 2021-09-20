@@ -1,6 +1,8 @@
 use clap::{App, Arg, ArgMatches};
 use std::io::{stdin, stdout, Write};
 
+use crate::exceptions::MultipleArgError;
+
 macro_rules! build_arg {
   ($matches: expr, $key: expr) => {
     $matches.value_of($key).map(|value| value.to_owned())
@@ -12,7 +14,12 @@ pub fn readline() -> String {
   stdin()
     .read_line(&mut line)
     .expect("unable to read from stdin");
-  line
+  let trimmed = line.trim().to_owned();
+  if trimmed.is_empty() {
+    readline()
+  } else {
+    trimmed
+  }
 }
 
 #[derive(Debug, PartialEq)]
@@ -42,6 +49,7 @@ pub enum Command {
   Add,
   Remove,
   Get,
+  Unknown,
 }
 
 impl From<Command> for String {
@@ -50,18 +58,19 @@ impl From<Command> for String {
       Command::Add => "add",
       Command::Remove => "remove",
       Command::Get => "get",
+      Command::Unknown => "unknown",
     }
     .to_owned()
   }
 }
 
-impl From<&str> for Command {
-  fn from(string: &str) -> Self {
-    match string {
+impl From<String> for Command {
+  fn from(string: String) -> Self {
+    match string.as_str() {
       "r" | "remove" => Command::Remove,
       "g" | "get" => Command::Get,
       "a" | "add" => Command::Add,
-      _ => panic!(),
+      _ => Command::Unknown,
     }
   }
 }
@@ -160,6 +169,7 @@ impl Arguments {
           vec!["name"]
         }
       }
+      Command::Unknown => vec![], // unreachable code
     }
   }
 
@@ -167,8 +177,7 @@ impl Arguments {
     for key in self.clone().missing() {
       print!("Enter {}: ", key);
       stdout().flush().expect("stdout flush failed!");
-      let _read = readline();
-      let line = _read.trim_end();
+      let line = readline();
       self.set(
         key,
         UnionType::First(Some(if key == "name" {
@@ -188,27 +197,13 @@ impl Arguments {
           a - add
           g - get"
       );
-      self.set(
-        "command",
-        UnionType::Second(Command::from(readline().trim_end())),
-      );
+      self.set("command", UnionType::Second(Command::from(readline())));
     }
     self.interactive_fill();
     println!();
     self
   }
 }
-
-#[derive(Clone, Copy, Debug)]
-pub struct MultipleArgError();
-
-impl std::fmt::Display for MultipleArgError {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    write!(f, "too many arguments entered.")
-  }
-}
-
-impl std::error::Error for MultipleArgError {}
 
 fn repetition_exists(matches: &ArgMatches, names: &[&str]) -> (Command, bool) {
   let mut count = 0;
